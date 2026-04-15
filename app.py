@@ -35,44 +35,207 @@ else:
     st.warning("⚠️ No se encontró API Key de Groq. Algunas funciones no estarán disponibles.")
     client = None
 
-# ==================== MÓDULO 1: TOKENIZADOR ====================
+# ==================== MÓDULO 1: EL LABORATORIO DEL TOKENIZADOR (MEJORADO) ====================
 st.header("📝 Módulo 1: El Laboratorio del Tokenizador")
-st.markdown("Visualiza cómo el texto se convierte en tokens y sus IDs numéricos.")
+st.markdown("Visualiza cómo el texto se convierte en tokens con **colores por tipo** según la teoría de tokenización")
 
-col1, col2 = st.columns([2, 1])
+# Teoría de tokenización
+with st.expander("📖 Teoría de Tokenización - ¿Por qué diferentes colores?"):
+    st.markdown("""
+    ### Tipos de tokens según su naturaleza:
+    
+    - 🔴 **Palabras completas**: Tokens que representan palabras enteras (ej: 'hola', 'mundo')
+    - 🟡 **Subpalabras**: Partes de palabras más largas (ej: 'acion', 'mente')
+    - 🟢 **Prefijos/Sufijos**: Morfemas gramaticales (ej: 're', 'pre', 'ción')
+    - 🔵 **Espacios y puntuación**: Caracteres especiales (ej: ' ', '.', ',', '?')
+    - 🟣 **Números**: Dígitos y valores numéricos
+    - 🟠 **Tokens especiales**: `<|endoftext|>`, `<s>`, `</s>`
+    
+    **Los LLMs no ven letras, ven estos tokens coloreados conceptualmente!**
+    """)
+
+col1, col2 = st.columns([3, 1])
+
 with col1:
-    texto_input = st.text_area("Ingresa tu texto:", 
-                               "El rey, el hombre y la mujer fueron al castillo.",
-                               height=100)
+    texto_input = st.text_area(
+        "📝 Ingresa tu texto para tokenizar:", 
+        "El rey, el hombre y la mujer fueron al castillo. ¡Hola mundo! 12345",
+        height=120,
+        key="texto_tokenizar"
+    )
 
-if texto_input:
-    # Usar tokenizador de GPT-2 (similar a muchos LLMs)
-    encoding = tiktoken.get_encoding("cl100k_base")
-    tokens = encoding.encode(texto_input)
-    token_strings = [encoding.decode([t]) for t in tokens]
-    
-    with col2:
-        st.metric("📏 Caracteres", len(texto_input))
-        st.metric("🔢 Tokens", len(tokens))
-        st.metric("📊 Ratio", f"{len(tokens)/len(texto_input):.2f} tokens/carácter")
-    
-    # Mostrar tokens coloreados
-    st.markdown("### 🔤 Tokens detectados:")
-    cols = st.columns(min(len(token_strings), 10))
-    for i, token in enumerate(token_strings[:50]):
-        with cols[i % len(cols)]:
-            st.markdown(f"<span style='background-color:#e6f3ff;padding:5px;border-radius:5px;margin:2px;display:inline-block'><b>Token {i}:</b> '{token}'<br><code>ID: {tokens[i]}</code></span>", 
-                       unsafe_allow_html=True)
-    
-    with st.expander("📋 Ver mapeo completo"):
-        df_tokens = pd.DataFrame({
-            "Posición": range(len(tokens)),
-            "Token": token_strings,
-            "Token ID": tokens
-        })
-        st.dataframe(df_tokens, use_container_width=True)
+with col2:
+    st.markdown("### 🎨 Leyenda de colores")
+    st.markdown("🔴 **Palabras completas**")
+    st.markdown("🟡 **Subpalabras**")
+    st.markdown("🟢 **Prefijos/Sufijos**")
+    st.markdown("🔵 **Espacios/Puntuación**")
+    st.markdown("🟣 **Números**")
+    st.markdown("🟠 **Tokens especiales**")
 
-st.markdown("---")
+# Botón específico para tokenizar
+if st.button("🔮 TOKENIZAR", type="primary", use_container_width=True):
+    if texto_input:
+        with st.spinner("Tokenizando el texto..."):
+            # Usar tokenizador de GPT-2/LLaMA
+            encoding = tiktoken.get_encoding("cl100k_base")
+            tokens = encoding.encode(texto_input)
+            token_strings = [encoding.decode([t]) for t in tokens]
+            
+            # Métricas
+            col_metric1, col_metric2, col_metric3, col_metric4 = st.columns(4)
+            with col_metric1:
+                st.metric("📏 Caracteres", len(texto_input))
+            with col_metric2:
+                st.metric("🔢 Tokens totales", len(tokens))
+            with col_metric3:
+                st.metric("📊 Ratio", f"{len(tokens)/len(texto_input):.2f}")
+            with col_metric4:
+                st.metric("💾 Compresión", f"{(1 - len(tokens)/len(texto_input))*100:.1f}%")
+            
+            # Función para determinar el tipo de token y su color
+            def get_token_color(token_str, token_id):
+                token_lower = token_str.lower()
+                
+                # Tokens especiales
+                if token_id in [100257, 100276, 100277] or '<|' in token_str:
+                    return "#FF6B35"  # Naranja para tokens especiales
+                
+                # Números
+                if token_str.isdigit() or (token_str[0] == '-' and token_str[1:].isdigit()):
+                    return "#9B59B6"  # Púrpura para números
+                
+                # Espacios
+                if token_str.isspace() or token_str == ' ':
+                    return "#3498DB"  # Azul para espacios
+                
+                # Puntuación
+                if token_str in ['.', ',', ';', ':', '!', '?', '¡', '¿', '(', ')', '[', ']', '{', '}', '"', "'", '...']:
+                    return "#3498DB"  # Azul para puntuación
+                
+                # Prefijos comunes (español/inglés)
+                prefijos = ['re', 'pre', 'post', 'anti', 'sub', 'super', 'des', 'in', 'im', 'non', 'un']
+                sufijos = ['ción', 'sión', 'mente', 'ando', 'iendo', 'ado', 'ido', 'ción', 'tivo', 'able', 'ible']
+                
+                # Subpalabras (comienzan con espacio o tienen caracteres especiales)
+                if token_str.startswith(' ') and len(token_str) > 1:
+                    return "#F39C12"  # Amarillo para subpalabras con espacio
+                
+                # Prefijos o sufijos
+                if any(token_lower.startswith(p) for p in prefijos) or any(token_lower.endswith(s) for s in sufijos):
+                    return "#2ECC71"  # Verde para prefijos/sufijos
+                
+                # Subpalabras (contienen '##' o son partes de palabras)
+                if '##' in token_str or (len(token_str) > 3 and token_str[0].isalpha() and not token_str[0].isupper()):
+                    return "#F1C40F"  # Amarillo para subpalabras
+                
+                # Palabras completas (por defecto)
+                return "#E74C3C"  # Rojo para palabras completas
+            
+            # Mostrar tokens en formato visual estilo "nube de tokens"
+            st.markdown("### 🎨 Visualización de tokens por tipo:")
+            
+            # Crear filas de tokens (máximo 10 por fila)
+            tokens_por_fila = 12
+            for i in range(0, len(token_strings), tokens_por_fila):
+                cols = st.columns(min(tokens_por_fila, len(token_strings) - i))
+                for j, col in enumerate(cols):
+                    idx = i + j
+                    if idx < len(token_strings):
+                        token_str = token_strings[idx]
+                        token_id = tokens[idx]
+                        color = get_token_color(token_str, token_id)
+                        
+                        # Escapar caracteres especiales para HTML
+                        token_display = token_str.replace(' ', '␣').replace('\n', '↵').replace('\t', '→')
+                        
+                        # Crear tarjeta de token
+                        col.markdown(
+                            f"""
+                            <div style='
+                                background-color: {color};
+                                padding: 8px 12px;
+                                margin: 4px;
+                                border-radius: 8px;
+                                text-align: center;
+                                font-family: monospace;
+                                font-weight: bold;
+                                color: white;
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                                transition: transform 0.2s;
+                                cursor: pointer;
+                            '
+                            onmouseover="this.style.transform='scale(1.05)'"
+                            onmouseout="this.style.transform='scale(1)'">
+                                <div style='font-size: 16px;'>'{token_display}'</div>
+                                <div style='font-size: 10px; opacity: 0.8;'>ID: {token_id}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+            
+            # Tabla detallada
+            with st.expander("📊 Ver tabla detallada de tokenización"):
+                tipos_token = []
+                for i, (token_str, token_id) in enumerate(zip(token_strings, tokens)):
+                    color = get_token_color(token_str, token_id)
+                    tipo = "🔴 Palabra completa"
+                    if color == "#F1C40F":
+                        tipo = "🟡 Subpalabra"
+                    elif color == "#2ECC71":
+                        tipo = "🟢 Prefijo/Sufijo"
+                    elif color == "#3498DB":
+                        tipo = "🔵 Espacio/Puntuación"
+                    elif color == "#9B59B6":
+                        tipo = "🟣 Número"
+                    elif color == "#FF6B35":
+                        tipo = "🟠 Token especial"
+                    
+                    tipos_token.append(tipo)
+                
+                df_detalle = pd.DataFrame({
+                    "Posición": range(len(tokens)),
+                    "Token": token_strings,
+                    "Token ID": tokens,
+                    "Tipo": tipos_token
+                })
+                st.dataframe(df_detalle, use_container_width=True, height=300)
+            
+            # Gráfico de composición de tokens
+            from collections import Counter
+            tipos_count = Counter(tipos_token)
+            
+            fig = px.pie(
+                values=list(tipos_count.values()),
+                names=list(tipos_count.keys()),
+                title="Composición del texto por tipo de token",
+                color_discrete_map={
+                    "🔴 Palabra completa": "#E74C3C",
+                    "🟡 Subpalabra": "#F1C40F",
+                    "🟢 Prefijo/Sufijo": "#2ECC71",
+                    "🔵 Espacio/Puntuación": "#3498DB",
+                    "🟣 Número": "#9B59B6",
+                    "🟠 Token especial": "#FF6B35"
+                }
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Explicación didáctica
+            with st.expander("💡 ¿Qué significa esto?"):
+                st.markdown(f"""
+                **Análisis de la tokenización:**
+                
+                - Tu texto tiene **{len(texto_input)} caracteres** pero el LLM lo ve como **{len(tokens)} tokens**
+                - Los modelos de lenguaje **no ven letras individuales**, ven estos bloques de significado
+                - **Tokens más comunes**: Palabras frecuentes como 'el', 'la', 'que' son un solo token
+                - **Subpalabras**: Palabras largas o raras se dividen en partes más pequeñas
+                - **Espacios y puntuación**: Son tokens importantes que dan estructura
+                
+                🧠 **Esto es crucial**: Cuando le preguntas a un LLM, él está prediciendo el siguiente TOKEN, no la siguiente letra.
+                """)
+    else:
+        st.warning("⚠️ Por favor ingresa algún texto para tokenizar")
 
 # ==================== MÓDULO 2: EMBEDDINGS Y GEOMETRÍA ====================
 st.header("📐 Módulo 2: Geometría de las Palabras (Embeddings)")
